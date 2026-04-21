@@ -1430,7 +1430,7 @@ contains
       
       write (ich, *) "! "//trim(levelkeyword)
       if (env%geolevel .ne. 'gfn1' .and. env%geolevel .ne. 'gfn2' .and. env%geolevel .ne. 'gfn2spinpol') then
-         write (ich, *) "! LOOSESCF UKS" ! DFT calculations with UKS for correct dissociation and LOOSESCF for faster convergence
+         write (ich, *) "! LOOSESCF" ! DFT calculations with UKS for correct dissociation and LOOSESCF for faster convergence
       end if
       write (ich, *) "%maxcore 8000" ! TODO make parameter or read in orca sample input file
 
