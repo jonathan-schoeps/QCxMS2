@@ -31,7 +31,7 @@ contains
       integer, allocatable :: nmode(:), nmode2(:)
       integer :: chrg, uhf, spin
       integer :: io
-      logical :: ex, ldum, found, failed, there, conv
+      logical :: ex, ldum, found, failed, there, conv, irc_failed
       logical, allocatable :: tsopt(:)
       character(len=80) :: pwd
       character(len=80) :: sumform
@@ -558,8 +558,13 @@ contains
             call chdir(trim(env%path))
             cycle
          end if
-         call findirc(env, nmode(i), ircmode)
-         if (nmode(i) .eq. 0) then
+         call findirc(env, nmode(i), ircmode, irc_failed)
+         if (irc_failed) then
+            write (*, *) "IRC analysis failed, keeping current TS guess and skipping TS optimization"
+            tsopt(i) = .true.
+            nmode(i) = 0
+            ircmode = 0.0_wp
+         elseif (nmode(i) .eq. 0) then
             write (*, *) "No imaginary mode found, we have to take end as ts ircmode set to 0"
             ircmode = 0.0_wp
          else
@@ -706,8 +711,10 @@ contains
          call chdir("ts")
          call chdir("hess2")
          ! failed calculations are handled in this routine
-         call findirc(env, nmode2(i), ircmode)
-         if (nmode2(i) .eq. 0) then ! includes also the cases without IRC mode in the first findirc check
+         call findirc(env, nmode2(i), ircmode, irc_failed)
+         if (irc_failed) then
+            write (*, *) "IRC analysis failed, keeping optimized TS structure"
+         elseif (nmode2(i) .eq. 0) then ! includes also the cases without IRC mode in the first findirc check
             write (*, *) "No imaginary mode found, &
             & we just take highest point on reaction path as transition state"
             call copy("../../ts.xyz", "../ts.xyz") ! copy tsguess from highest point into tsdir overwrite failed ts optimization
@@ -1959,7 +1966,7 @@ contains
 ! and the RMSD of the TS is compared for each point to start and end structure
 ! if at least half of the points exhibit changes in RMSD ("score" over > 4*10) that suit to
 ! the expected behavior of a TS, the IRC is considered as valid
-   subroutine findirc(env, nmode, ircmode)
+   subroutine findirc(env, nmode, ircmode, analysis_failed)
       use mctc_env, only: error_type, get_argument!, fatal_error
       use mctc_io, only: structure_type, read_structure, write_structure, &
      & filetype, get_filetype, to_symbol, to_number
@@ -1987,25 +1994,44 @@ contains
       integer :: score ! a "score" to evaluate if we have a good IRC
       type(runtypedata) :: env
       character(len=1024) :: jobcall
-      logical :: ex
+      logical :: ex, irc_failed
+      integer :: io
+      logical, intent(out), optional :: analysis_failed
 
+      irc_failed = .false.
+      if (present(analysis_failed)) analysis_failed = .false.
+      nmode = 0
+      ircmode = 0.0_wp
       call rdshort_int('ts.xyz', nat)
       allocate (modes(9, 3, nat))
       allocate (freqs(9))
-      call move('orca.g98.out', 'g98.out')
       inquire (file='g98.out', exist=ex)
       if (.not. ex) then
-         write (*, *) "ERROR: Could not find orca.g98.out, Hessian calculation failed"
+         inquire (file='orca.g98.out', exist=ex)
+         if (ex) then
+            call copy('orca.g98.out', 'g98.out')
+         else
+            inquire (file='orca.hess', exist=ex)
+            if (ex) then
+               write (jobcall, '(a)') 'xtb thermo ts.xyz --orca orca.hess > g98.out 2>/dev/null'
+               call execute_command_line(trim(jobcall), exitstat=io)
+               inquire (file='g98.out', exist=ex)
+               if (ex) call copy('g98.out', 'orca.g98.out')
+            end if
+         end if
+      end if
+      inquire (file='g98.out', exist=ex)
+      if (.not. ex) then
+         write (*, *) "ERROR: Could not prepare g98.out from ORCA Hessian"
          call printpwd
-         nmode = 0
-         ircmode = 0.0_wp
+         irc_failed = .true.
+         if (present(analysis_failed)) analysis_failed = .true.
          return
       end if
       call rdg98modes(nat, freqs, modes, nimags)
       if (nimags .eq. 0) then
          write (*, *) "NO IMAGINARY FREQUENCY FOUND"
          call printpwd
-         nmode = 0
          return
       end if
       ! somehow the comment line makes problems here....
@@ -2013,7 +2039,8 @@ contains
       if (allocated(error)) then
       if (error%stat .eq. 1) then ! error reading structure
          write (*, *) "ERROR: Could not read start.xyz"
-         nmode = 0
+         irc_failed = .true.
+         if (present(analysis_failed)) analysis_failed = .true.
          return
       end if
       end if
@@ -2023,7 +2050,8 @@ contains
       if (allocated(error)) then
       if (error%stat .eq. 1) then ! error reading structure
          write (*, *) "ERROR: Could not read start.xyz"
-         nmode = 0
+         irc_failed = .true.
+         if (present(analysis_failed)) analysis_failed = .true.
          return
       end if
       end if
@@ -2032,14 +2060,16 @@ contains
       if (allocated(error)) then
       if (error%stat .eq. 1) then ! error reading structure
          write (*, *) "ERROR: Could not read start.xyz"
-         nmode = 0
+         irc_failed = .true.
+         if (present(analysis_failed)) analysis_failed = .true.
          return
       end if
       end if
       ts = mol%xyz*bohr
       if (size(ts) .ne. size(start) .or. size(ts) .ne. size(end)) then
          write (*, *) "ERROR: TS, start and end have different number of atoms"
-         nmode = 0
+         irc_failed = .true.
+         if (present(analysis_failed)) analysis_failed = .true.
          return
       end if
 
@@ -2049,14 +2079,16 @@ contains
 
       if (rmsd_ts_start .lt. 1e-08_wp) then
          write (*, *) "WARNING: TS is identical to start, something went wrong aborting IRC determination"
-         nmode = 0
+         irc_failed = .true.
+         if (present(analysis_failed)) analysis_failed = .true.
          return
       end if
 
       call calcrmsd(nat, ts, end, rmsd_ts_end)
       if (rmsd_ts_end .lt. 1e-08_wp) then
          write (*, *) "WARNING: TS is identical to start, something went wrong aborting IRC determination"
-         nmode = 0
+         irc_failed = .true.
+         if (present(analysis_failed)) analysis_failed = .true.
          return
       end if
 
@@ -2181,7 +2213,6 @@ contains
       end do
       write (*, *) "no suitable IRC mode found within first 9 frequencies for"
       call printpwd
-      nmode = 0
 
       ! DEPRECATED CODE, instead of score we used thresholds for RMSD
       ! to evaluate how good the IRC mode is

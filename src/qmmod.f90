@@ -770,13 +770,9 @@ contains
          else
             pattern = "Total correction"
          end if
-         ! convert to g98 format
-         !call copy(trim(fname), 'xtbin.xyz')
-         !TODO new xtb version
-         ! inquire (file='g98.out', exist=ex)
-         !if (.not. ex) then write (jobcall, '(a)') trim(jobcall)//' && xtb xtbin.xyz --hess  > xtbhess.out 2>/dev/null'
-         !write (jobcall, '(a)') trim(jobcall)//' && xtb thermo xtbin.xyz --orca orca.hess  > thermo.out 2>/dev/null'
-         ! write (jobcall, '(a)') trim(jobcall)//' && xtb xtbin.xyz --hess  > xtbhess.out 2>/dev/null'
+         write (jobcall, '(a)') trim(jobcall)//' && rm -f g98.out orca.g98.out'
+         write (jobcall, '(a)') trim(jobcall)//' && xtb thermo '//trim(fname)//' --orca orca.hess > g98.out 2>/dev/null'
+         write (jobcall, '(a)') trim(jobcall)//' && cp g98.out orca.g98.out 2>/dev/null'
          write(cleanupcall,'(a)') trim(cleanupcall)//" orca.vibspectrum orca.xtbhess.xyz"
       case ('ohess')
          if (env%notemp) then
