@@ -770,9 +770,9 @@ contains
          else
             pattern = "Total correction"
          end if
-         write (jobcall, '(a)') trim(jobcall)//' && rm -f g98.out orca.g98.out'
-         write (jobcall, '(a)') trim(jobcall)//' && xtb thermo '//trim(fname)//' --orca orca.hess > g98.out 2>/dev/null'
-         write (jobcall, '(a)') trim(jobcall)//' && cp g98.out orca.g98.out 2>/dev/null'
+         ! Some ORCA/xTB versions no longer emit a Gaussian-style g98.out here.
+         ! Keep thermochemistry separate; IRC mode parsing can fall back to orca.hess.
+         write (jobcall, '(a)') trim(jobcall)//' && xtb thermo '//trim(fname)//' --orca orca.hess > thermo.out 2>/dev/null'
          write(cleanupcall,'(a)') trim(cleanupcall)//" orca.vibspectrum orca.xtbhess.xyz"
       case ('ohess')
          if (env%notemp) then

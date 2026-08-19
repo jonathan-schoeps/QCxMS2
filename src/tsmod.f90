@@ -2206,9 +2206,28 @@ contains
       call rdshort_int('ts.xyz', nat)
       allocate (modes(9, 3, nat))
       allocate (freqs(9))
-      inquire (file='orca.hess', exist=ex_hess)
 
-      if (ex_hess) then
+      ! Some ORCA/xTB version combinations suppress Gaussian-style g98 output.
+      ! Prefer it when present, otherwise read the ORCA Hessian directly.
+      inquire (file='g98.out', exist=ex_g98)
+      if (.not. ex_g98) then
+         inquire (file='orca.g98.out', exist=ex_orca_g98)
+         if (ex_orca_g98) then
+            call copy('orca.g98.out', 'g98.out')
+            ex_g98 = .true.
+         end if
+      end if
+
+      if (ex_g98) then
+         call rdg98modes(nat, freqs, modes, nmodes)
+      else
+         inquire (file='orca.hess', exist=ex_hess)
+         if (.not. ex_hess) then
+            write (*, *) "ERROR: Could not find g98.out, orca.g98.out, or orca.hess."
+            call printpwd
+            analysis_failed = .true.
+            return
+         end if
          call rdorcahessmodes(nat, freqs, modes, nmodes, parse_failed)
          if (parse_failed) then
             write (*, *) "ERROR: Could not read vibrational modes from orca.hess"
@@ -2216,22 +2235,6 @@ contains
             analysis_failed = .true.
             return
          end if
-      else
-         inquire (file='g98.out', exist=ex_g98)
-         if (.not. ex_g98) then
-            inquire (file='orca.g98.out', exist=ex_orca_g98)
-            if (ex_orca_g98) then
-               call copy('orca.g98.out', 'g98.out')
-               ex_g98 = .true.
-            end if
-         end if
-         if (.not. ex_g98) then
-            write (*, *) "ERROR: Could not find orca.hess, g98.out, or orca.g98.out."
-            call printpwd
-            analysis_failed = .true.
-            return
-         end if
-         call rdg98modes(nat, freqs, modes, nmodes)
       end if
 
       if (nmodes .gt. 0) then
